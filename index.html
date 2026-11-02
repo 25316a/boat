@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>비상 생명과학 I - 세포소기관 2D 패들패들</title>
+    <!-- Tailwind CSS for UI Overlay -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Jua&family=Noto+Sans+KR:wght@400;700;900&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        .font-jua {
+            font-family: 'Jua', sans-serif;
+        }
+
+        #game-canvas {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .clickable {
+            pointer-events: auto !important;
+            cursor: pointer;
+        }
+
+        .glow-green {
+            box-shadow: 0 0 25px rgba(16, 185, 129, 0.6);
+        }
+
+        .glow-red {
+            box-shadow: 0 0 25px rgba(244, 63, 94, 0.6);
+        }
+
+        /* Camera Shake Animation Class */
+        .shake {
+            animation: shakeAnim 0.35s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shakeAnim {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+            40%, 60% { transform: translate3d(6px, 0, 0); }
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden bg-slate-950">
+
+    <!-- 2D Canvas Container -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-layer" class="relative z-10 w-full h-full pointer-events-none flex flex-col justify-between p-4 sm:p-6">
+        
+        <!-- Top HUD: Question & Score Board -->
+        <div class="w-full max-w-3xl mx-auto flex flex-col items-center">
+            <!-- Score & Info Bar -->
+            <div class="w-full flex justify-between items-center px-5 py-2.5 rounded-2xl glass-panel text-sm sm:text-base font-bold mb-3 shadow-xl border border-slate-700/50 pointer-events-auto">
+                <div class="flex items-center space-x-2 text-emerald-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span>점수: <span id="score-text" class="text-white text-xl font-black">0</span></span>
+                </div>
+                <div class="flex items-center space-x-2 text-amber-400">
+                    <span>연속 정답(콤보): <span id="combo-text" class="text-white text-xl font-black">0</span></span>
+                </div>
+                <div class="flex items-center space-x-2 text-cyan-400">
+                    <span>유속: <span id="speed-text" class="text-white font-mono font-extrabold">1.0x</span></span>
+                </div>
+            </div>
+
+            <!-- Question Box -->
+            <div id="question-box" class="w-full p-4 sm:p-5 rounded-2xl glass-panel border-2 border-emerald-500/40 text-center shadow-2xl transition-all duration-300 pointer-events-auto">
+                <div class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 mb-1.5">
+                    비상 생명과학 I · 세포소기관과 물질대사
+                </div>
+                <h2 id="question-text" class="text-base sm:text-xl font-extrabold text-slate-100 leading-relaxed">
+                    게임을 시작하려면 아래 버튼을 누르세요!
+                </h2>
+            </div>
+        </div>
+
+        <!-- Controls Guide Banner (Bottom) -->
+        <div class="w-full max-w-xl mx-auto text-center hidden sm:block">
+            <div class="px-4 py-2 rounded-full glass-panel text-xs text-slate-300 font-semibold border border-slate-700/60 shadow-lg">
+                🎮 <span class="text-emerald-400 font-bold">← / → (방향키 연타)</span> : 배를 좌우로 조금씩 이동 | <span class="text-amber-300 font-bold">↓ (아래 키)</span> : 중앙 정렬 (위쪽 키 없음)
+            </div>
+        </div>
+
+        <!-- Mobile Touch Controls -->
+        <div class="w-full flex justify-between items-center sm:hidden pointer-events-auto pb-2">
+            <button id="touch-left" class="w-16 h-16 rounded-full bg-slate-800/90 border-2 border-emerald-500/50 text-2xl active:bg-emerald-600 flex items-center justify-center font-bold text-white shadow-lg pointer-events-auto">←</button>
+            <button id="touch-down" class="w-16 h-16 rounded-full bg-slate-800/90 border-2 border-slate-600 text-xs active:bg-cyan-600 flex items-center justify-center font-bold text-slate-200 shadow-lg pointer-events-auto">중앙(↓)</button>
+            <button id="touch-right" class="w-16 h-16 rounded-full bg-slate-800/90 border-2 border-emerald-500/50 text-2xl active:bg-emerald-600 flex items-center justify-center font-bold text-white shadow-lg pointer-events-auto">→</button>
+        </div>
+    </div>
+
+    <!-- Start Screen Overlay -->
+    <div id="start-screen" class="absolute inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-950/90 backdrop-blur-md text-center pointer-events-auto">
+        <div class="w-20 h-20 mb-4 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 animate-pulse glow-green">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+        </div>
+        <h1 class="text-3xl sm:text-5xl font-extrabold font-jua text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 mb-3">
+            세포소기관 2D 패들패들 🚣‍♂️
+        </h1>
+        <p class="text-slate-300 text-sm sm:text-base max-w-md mb-6 leading-relaxed">
+            비상교육 생명과학 I <span class="text-emerald-400 font-bold">[세포소기관과 물질대사]</span> 개념 퀴즈!<br/>
+            세포질 유체 강을 따라 노를 저으며 정답 관문으로 통과하세요.
+        </p>
+
+        <div class="bg-slate-900/90 p-4 rounded-2xl border border-slate-800 text-xs sm:text-sm text-slate-300 mb-8 text-left max-w-md space-y-2 shadow-inner">
+            <p class="font-bold text-amber-300">🕹️ 조작 규칙 (단발 연타 제어):</p>
+            <p>• <span class="text-emerald-400 font-bold">← / → (좌/우 방향키)</span> : 한번 누를 때마다 배가 아주 조금씩 이동합니다. 원하는 방향으로 빠르게 연타하세요!</p>
+            <p>• <span class="text-cyan-400 font-bold">↓ (아래 방향키)</span> : 배 위치를 중앙으로 즉시 정렬합니다.</p>
+            <p>• <span class="text-rose-400 font-bold">※ 위쪽 방향키(↑)는 사용 불가</span>하며, 오답 관문에 충돌 시 암벽 장벽에 부딪혀 게임 오버됩니다.</p>
+        </div>
+
+        <button id="start-btn" class="clickable px-10 py-3.5 rounded-full text-lg font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 shadow-xl glow-green transform hover:scale-105 transition-all">
+            2D 배 젓기 시작 🚀
+        </button>
+    </div>
+
+    <!-- Game Over Screen Overlay -->
+    <div id="gameover-screen" class="hidden absolute inset-0 z-50 flex flex-col items-center justify-center p-6 bg-slate-950/95 backdrop-blur-md text-center pointer-events-auto">
+        <div class="w-16 h-16 mb-4 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-500 glow-red animate-bounce">
+            💥
+        </div>
+        <h2 class="text-3xl font-extrabold font-jua text-rose-400 mb-2">충돌! 게임 오버</h2>
+        <p id="gameover-reason" class="text-slate-300 text-sm mb-4 max-w-md bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+            오답 관문의 장애물에 부딪혔습니다!
+        </p>
+
+        <div class="glass-panel p-4 rounded-2xl border border-slate-800 mb-6 text-center w-full max-w-xs">
+            <p class="text-xs text-slate-400">최종 점수</p>
+            <p id="final-score" class="text-3xl font-black text-emerald-400 my-1">0</p>
+            <p class="text-xs text-slate-400">최대 연속 정답: <span id="final-combo" class="text-amber-300 font-bold">0</span>회</p>
+        </div>
+
+        <button id="restart-btn" class="clickable px-8 py-3 rounded-full text-base font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-lg glow-green transform hover:scale-105 transition-all">
+            다시 도전 🔄
+        </button>
+    </div>
+
+    <!-- Web Audio API Sound Synthesizer & Game Logic Script -->
+    <script>
+        // Sound Effects Controller (Web Audio API)
+        const SoundFX = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            },
+            playRowSound() {
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+                    osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.15);
+                    gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.15);
+                } catch(e) {}
+            },
+            playCorrect() {
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, this.ctx.currentTime); // C5
+                    osc.frequency.setValueAtTime(659.25, this.ctx.currentTime + 0.1); // E5
+                    gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.3);
+                } catch(e) {}
+            },
+            playWrong() {
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                    osc.frequency.linearRampToValueAtTime(60, this.ctx.currentTime + 0.3);
+                    gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + 0.3);
+                } catch(e) {}
+            }
+        };
+
+        // 비상교육 생명과학 I 문제 데이터베이스
+        const questionBankRaw = [
+            {
+                q: "식물 세포에서 빛에너지를 화학에너지(포도당)로 전환하는 동화 작용 소기관은?",
+                ans: "엽록체",
+                wrong: "마이토콘드리아",
+                explain: "엽록체는 빛에너지를 흡수하여 이산화탄소와 물로부터 포도당을 합성합니다."
+            },
+            {
+                q: "엽록체 내부에서 틸라코이드 막이 쌓여 있으며, 광합성 색소가 있어 동화 작용 반응이 일어나는 구조는?",
+                ans: "그라나 (Grana)",
+                wrong: "크리스타 (Crista)",
+                explain: "틸라코이드가 쌓인 '그라나'의 틸라코이드 막에는 광합성 색소(클로로필)와 전자전달계가 있어 동화 작용이 진행됩니다."
+            },
+            {
+                q: "세포 호흡을 통해 유기물을 분해하고 ATP 에너지를 생성하는 세포 내 에너지 공장은?",
+                ans: "마이토콘드리아",
+                wrong: "골지체",
+                explain: "마이토콘드리아는 세포 호흡을 통해 포도당의 화학 에너지를 ATP 형태로 전환합니다."
+            },
+            {
+                q: "마이토콘드리아 내막이 표면적을 넓히기 위해 안쪽으로 접혀 들어간 주름 구조는?",
+                ans: "크리스타 (Crista)",
+                wrong: "그라나 (Grana)",
+                explain: "내막의 주름 구조인 '크리스타'에는 전자전달계 및 ATP 합성효소가 밀집되어 있어 세포 호흡의 마지막 단계가 일어납니다."
+            },
+            {
+                q: "엽록체와 마이토콘드리아가 공통적으로 가지고 있는 구조적 특징은?",
+                ans: "이중막 구조 및 자체 DNA·라이보솜 보유",
+                wrong: "단일막 구조 및 자체 DNA 부재",
+                explain: "두 소기관 모두 이중막 구조이며 자체 DNA와 라이보솜을 가지고 있어 스스로 복제 및 단백질 합성이 가능합니다."
+            },
+            {
+                q: "저분자 물질을 고분자 물질로 합성하며 에너지를 흡수하는 물질대사(예: 광합성)는?",
+                ans: "동화 작용",
+                wrong: "이화 작용",
+                explain: "동화 작용은 에너지를 흡수하는 흡열 반응이며, 이화 작용(예: 세포 호흡)은 고분자를 분해하며 에너지를 방출하는 발열 반응입니다."
+            },
+            {
+                q: "ATP 분자 1개는 아데닌, 리보스 및 몇 개의 인산기로 구성되어 있는가?",
+                ans: "3개의 인산기",
+                wrong: "2개의 인산기",
+                explain: "ATP(Adenosine Triphosphate)는 아데닌 + 리보스 + 3개의 인산으로 구성되어 있습니다."
+            },
+            {
+                q: "ATP의 인산 결합이 끊어질 때 많은 에너지를 방출하는 화학 결합의 명칭은?",
+                ans: "고에너지 인산 결합",
+                wrong: "이온 결합",
+                explain: "ATP의 말단 인산 결합(고에너지 인산 결합)이 끊어질 때 1몰당 약 7.3 kcal의 에너지가 방출됩니다."
+            },
+            {
+                q: "세포 호흡으로 방출된 포도당의 에너지는 주로 무엇과 무엇으로 전환되는가?",
+                ans: "ATP 에너지와 열에너지",
+                wrong: "빛에너지와 운동에너지",
+                explain: "포도당 에너지의 약 40%는 ATP에 저장되고, 나머지 60%는 열에너지로 방출되어 체온 유지에 이용됩니다."
+            },
+            {
+                q: "RNA와 단백질로 구성되며, 핵의 유전 정보에 따라 단백질을 직접 번역·합성하는 소기관은?",
+                ans: "라이보솜",
+                wrong: "라이소솜",
+                explain: "라이보솜은 세포 내 단백질 합성 공장입니다. (라이소솜은 가수분해 효소를 포함한 세포 내 소화 기관)"
+            },
+            {
+                q: "가수분해 효소를 포함하여 오래된 소기관이나 외부 이물질을 분해하는 세포 내 소화 기관은?",
+                ans: "라이소솜",
+                wrong: "액포",
+                explain: "라이소솜 내부의 가수분해 효소는 산성 환경에서 노폐물과 이물질을 소화시킵니다."
+            },
+            {
+                q: "[소기관 협력] 핵의 정보로 라이보솜이 만든 단백질을 소포체를 거쳐 전달받아 최종 변형·분류 후 세포 밖으로 분비하는 소기관은?",
+                ans: "골지체",
+                wrong: "중심체",
+                explain: "단백질 분비 경로는 핵(DNA) → 라이보솜(합성) → 거친면 소포체(수송) → 골지체(변형 및 분비소낭) → 세포막(외배출) 순으로 협력합니다."
+            }
+        ];
+
+        // Global Game State
+        let gameActive = false;
+        let score = 0;
+        let combo = 0;
+        let currentSpeed = 2.5;
+        let questions = [];
+        let currentQIndex = 0;
+        let currentQuestion = null;
+
+        // Canvas & Player Boat State
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let boat = {
+            x: 0,
+            y: 0,
+            targetX: 0,
+            width: 44,
+            height: 70,
+            oarAngle: 0
+        };
+
+        let gateY = -150;
+        let optionA = ""; // Left Gate Text
+        let optionB = ""; // Right Gate Text
+        let correctGate = 'A'; // 'A' or 'B'
+        
+        let flowOffset = 0;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            boat.y = canvas.height * 0.78;
+            if (!gameActive) {
+                boat.x = canvas.width / 2;
+                boat.targetX = canvas.width / 2;
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Shuffle Array (Fisher-Yates)
+        function shuffle(arr) {
+            const array = [...arr];
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Initialize Game
+        function startGame() {
+            SoundFX.init();
+            gameActive = true;
+            score = 0;
+            combo = 0;
+            currentSpeed = 2.5;
+            
+            document.getElementById('score-text').innerText = score;
+            document.getElementById('combo-text').innerText = combo;
+            document.getElementById('speed-text').innerText = "1.0x";
+
+            // Hide Overlays
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('gameover-screen').classList.add('hidden');
+
+            // Reset Boat Position
+            boat.x = canvas.width / 2;
+            boat.targetX = canvas.width / 2;
+
+            // Prepare Questions
+            questions = shuffle(questionBankRaw);
+            currentQIndex = 0;
+
+            spawnNextGate();
+        }
+
+        function spawnNextGate() {
+            if (currentQIndex >= questions.length) {
+                // Loop around shuffled questions if finished
+                questions = shuffle(questionBankRaw);
+                currentQIndex = 0;
+            }
+
+            currentQuestion = questions[currentQIndex];
+            currentQIndex++;
+
+            // Randomize Gate Position for Answer (A or B)
+            if (Math.random() < 0.5) {
+                correctGate = 'A';
+                optionA = currentQuestion.ans;
+                optionB = currentQuestion.wrong;
+            } else {
+                correctGate = 'B';
+                optionA = currentQuestion.wrong;
+                optionB = currentQuestion.ans;
+            }
+
+            // Reset Gate Y position above viewport
+            gateY = -180;
+
+            // Update Question UI
+            document.getElementById('question-text').innerText = currentQuestion.q;
+        }
+
+        // Single-Tap Key Handler (Disallow holding down keys)
+        window.addEventListener('keydown', (e) => {
+            if (!gameActive || e.repeat) return; // e.repeat enforces single tap
+
+            const step = 22; // Small movement step per tap
+
+            if (e.key === 'ArrowLeft') {
+                boat.targetX = Math.max(canvas.width * 0.15, boat.targetX - step);
+                boat.oarAngle = -0.3;
+                SoundFX.playRowSound();
+            } else if (e.key === 'ArrowRight') {
+                boat.targetX = Math.min(canvas.width * 0.85, boat.targetX + step);
+                boat.oarAngle = 0.3;
+                SoundFX.playRowSound();
+            } else if (e.key === 'ArrowDown') {
+                boat.targetX = canvas.width / 2;
+                boat.oarAngle = 0;
+                SoundFX.playRowSound();
+            }
+        });
+
+        // Mobile Touch Handlers
+        document.getElementById('touch-left').addEventListener('click', () => {
+            if (!gameActive) return;
+            boat.targetX = Math.max(canvas.width * 0.15, boat.targetX - 22);
+            SoundFX.playRowSound();
+        });
+        document.getElementById('touch-right').addEventListener('click', () => {
+            if (!gameActive) return;
+            boat.targetX = Math.min(canvas.width * 0.85, boat.targetX + 22);
+            SoundFX.playRowSound();
+        });
+        document.getElementById('touch-down').addEventListener('click', () => {
+            if (!gameActive) return;
+            boat.targetX = canvas.width / 2;
+            SoundFX.playRowSound();
+        });
+
+        // Event Listeners for Start and Restart Buttons
+        document.getElementById('start-btn').addEventListener('click', startGame);
+        document.getElementById('restart-btn').addEventListener('click', startGame);
+
+        // Main Render & Physics Loop
+        function update() {
+            if (gameActive) {
+                // Smooth interpolation for boat movement
+                boat.x += (boat.targetX - boat.x) * 0.25;
+                boat.oarAngle *= 0.85; // Decay oar angle
+
+                // Move Gate Downwards
+                gateY += currentSpeed;
+
+                // Flow effect background
+                flowOffset = (flowOffset + currentSpeed) % 40;
+
+                // Collision / Passage Detection
+                if (gateY >= boat.y - 20 && gateY <= boat.y + 40) {
+                    const midX = canvas.width / 2;
+                    let userGate = boat.x < midX ? 'A' : 'B';
+
+                    if (userGate === correctGate) {
+                        // Correct Passage!
+                        SoundFX.playCorrect();
+                        score += 100 + (combo * 20);
+                        combo++;
+                        currentSpeed = Math.min(6.0, 2.5 + Math.floor(score / 300) * 0.3);
+
+                        document.getElementById('score-text').innerText = score;
+                        document.getElementById('combo-text').innerText = combo;
+                        document.getElementById('speed-text').innerText = (currentSpeed / 2.5).toFixed(1) + "x";
+
+                        spawnNextGate();
+                    } else {
+                        // Crash into wrong gate!
+                        triggerGameOver();
+                    }
+                }
+            }
+
+            render();
+            requestAnimationFrame(update);
+        }
+
+        function triggerGameOver() {
+            gameActive = false;
+            SoundFX.playWrong();
+
+            document.getElementById('ui-layer').classList.add('shake');
+            setTimeout(() => {
+                document.getElementById('ui-layer').classList.remove('shake');
+            }, 400);
+
+            document.getElementById('final-score').innerText = score;
+            document.getElementById('final-combo').innerText = combo;
+            
+            const explanation = currentQuestion ? currentQuestion.explain : "소기관의 구조와 기능을 잘 확인하세요!";
+            document.getElementById('gameover-reason').innerHTML = `
+                <span class="text-rose-400 font-bold block mb-1">❌ 오답 충돌!</span>
+                <span class="text-xs text-slate-200">${explanation}</span>
+            `;
+
+            document.getElementById('gameover-screen').classList.remove('hidden');
+        }
+
+        // Render Canvas Elements
+        function render() {
+            // Draw Cytoplasm River Background
+            ctx.fillStyle = '#064e3b'; // Deep Cell Cytoplasm Emerald
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Cytoplasm Flow Lines
+            ctx.strokeStyle = 'rgba(52, 211, 153, 0.15)';
+            ctx.lineWidth = 2;
+            for (let y = -40 + flowOffset; y < canvas.height; y += 40) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.bezierCurveTo(canvas.width * 0.3, y + 15, canvas.width * 0.7, y - 15, canvas.width, y);
+                ctx.stroke();
+            }
+
+            // Draw River Banks (Boundaries)
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width * 0.1, canvas.height);
+            ctx.fillRect(canvas.width * 0.9, 0, canvas.width * 0.1, canvas.height);
+
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width * 0.1, 0); ctx.lineTo(canvas.width * 0.1, canvas.height);
+            ctx.moveTo(canvas.width * 0.9, 0); ctx.lineTo(canvas.width * 0.9, canvas.height);
+            ctx.stroke();
+
+            // Draw Gates
+            if (gameActive || gateY > -180) {
+                drawGates();
+            }
+
+            // Draw Boat
+            drawBoat();
+        }
+
+        function drawGates() {
+            const riverLeft = canvas.width * 0.1;
+            const riverWidth = canvas.width * 0.8;
+            const halfWidth = riverWidth / 2;
+
+            // Gate A (Left) & Gate B (Right)
+            drawSingleGate(riverLeft + 10, gateY, halfWidth - 20, optionA, 'A');
+            drawSingleGate(riverLeft + halfWidth + 10, gateY, halfWidth - 20, optionB, 'B');
+        }
+
+        function drawSingleGate(x, y, width, optionText, label) {
+            ctx.save();
+            
+            // Neutrally Styled Equal Gates
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+            ctx.strokeStyle = '#0284c7'; // Neutral Sky Blue Border
+            ctx.lineWidth = 4;
+
+            // Rounded Gate Box
+            ctx.beginPath();
+            ctx.roundRect(x, y, width, 90, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            // Neutral Label (Gate A / Gate B)
+            ctx.fillStyle = '#38bdf8';
+            ctx.font = 'bold 13px Noto Sans KR';
+            ctx.textAlign = 'center';
+            ctx.fillText(`관문 ${label}`, x + width / 2, y + 25);
+
+            // Option Text
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 15px Noto Sans KR';
+            
+            // Multi-line wrap for long option text
+            const maxTextWidth = width - 20;
+            if (ctx.measureText(optionText).width > maxTextWidth) {
+                const mid = Math.floor(optionText.length / 2);
+                ctx.fillText(optionText.slice(0, mid), x + width / 2, y + 50);
+                ctx.fillText(optionText.slice(mid), x + width / 2, y + 70);
+            } else {
+                ctx.fillText(optionText, x + width / 2, y + 58);
+            }
+
+            ctx.restore();
+        }
+
+        function drawBoat() {
+            ctx.save();
+            ctx.translate(boat.x, boat.y);
+
+            // Oars
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 4;
+            // Left Oar
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(-35, -10 + boat.oarAngle * 20);
+            ctx.stroke();
+            // Right Oar
+            ctx.beginPath();
+            ctx.moveTo(10, 0);
+            ctx.lineTo(35, -10 - boat.oarAngle * 20);
+            ctx.stroke();
+
+            // Boat Hull
+            ctx.fillStyle = '#b45309'; // Wooden hull
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 3;
+
+            ctx.beginPath();
+            ctx.moveTo(0, -35); // Bow
+            ctx.quadraticCurveTo(22, -10, 18, 30);
+            ctx.lineTo(-18, 30);
+            ctx.quadraticCurveTo(-22, -10, 0, -35);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Boat Deck Details
+            ctx.fillStyle = '#d97706';
+            ctx.fillRect(-10, -10, 20, 30);
+
+            // Rower (Student Character)
+            ctx.fillStyle = '#38bdf8'; // Shirt
+            ctx.beginPath();
+            ctx.arc(0, 5, 9, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Head
+            ctx.fillStyle = '#fde047'; // Hair
+            ctx.beginPath();
+            ctx.arc(0, 2, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Run Loop
+        requestAnimationFrame(update);
+    </script>
+</body>
+</html>
+```
+
+이제 오른쪽에 위치한 **`2D 배 젓기 시작 🚀`** 버튼을 누르시면 정상적으로 클릭이 감지되어 문제 퀴즈와 게임이 실행됩니다!
